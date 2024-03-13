@@ -1,0 +1,530 @@
+
+---
+title: "Guppy Network Infection Experiment"
+author:
+- David R. Clark
+- Jason Walsman
+- Faith Rovenolt
+- Jessica Stephenson
+date: "01/31/2023"
+output:
+  pdf_document:
+    toc: yes
+    number_sections: yes
+  editor_options:
+    chunk_output_type: console
+  word_document:
+    toc: yes
+header-includes:
+- \usepackage{caption}
+- \captionsetup[figure]{labelformat=empty}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(tidy.opts=list(width.cutoff=70), tidy=TRUE)
+```
+
+\section{Introduction}
+
+\subsection{Overall summary}
+
+This is an analysis to examine how host traits, particularly host sociality and sex, impacts the spread of disease within experimental epidemics of Trinidadian guppies and Monogenean parasites. 
+
+\subsection{Quick experimental summary}
+
+We released 6 female guppies and 3 male guppies into experimental behavioral enclosures together and recorded their baseline sociality (Here defined as Contact Rate) for 2 days. We then introduced an infected female index fish on day 3 to see how quickly parasites spread within the group of fish and how likely specific individuals to pick up parasite infection. We repeated recording behavior for 7 days post infection for a total of 9 days of behavioral recordings, however the analysis within this document is limited to days 1-3. 
+
+\subsection{Questions}
+
+\subsubsection{Individual level}
+
+- Is how infected an individual is mean it will have less contacts? 
+
+-Are hosts with higher contact rate more likely to become infected?
+
+-Does index infection load also predict the transmission of parasites?
+
+-Do both these factors together better predict parasite spread than either alone?
+
+-Does host sex variation lead to unequal likelihood of acquiring parasites during epidemic spread?
+
+-Do hosts change their sociality with the introduction of infectious agents during an epidemic?
+
+-Is there sex variation in the change in sociality as an epidemic starts?
+
+\subsection{Data description, structure and type}
+
+This analysis uses a single master dataframe titled:XXXX that is subset into different portions based on what questions/analysis we are addressing. You'll find the subset for each section at the start of each analysis section. Variables within the data frame as follows:
+
+\textbf{Ind}: The individual ID of each fish used in the trial. \newline
+ \textbf{ContactRate}: The daily average contact rate for each individual  ($contacts/dyad/min$) \newline
+ \textbf{Day3ContactRatewoI}: The daily average contact rate for each non-index individual with other non-index individuals. Index fish is the fish introduced on Day 3 with infection (or not for uninfected conrols) ($contacts/dyad/min$) \newline
+ \textbf{IndexContact}: The daily average contact rate with the index individual. Repeated for each individual since they only had one day with the index individual. ($contacts/dyad/min$) \newline
+ \textbf{Day}: The day in which the behavior was taken. Days 1 and 2 are days without the infected index individual and day three is with the infected index individual. 3 levels. One level for each day. \newline
+ \textbf{Popavg}: The average contact rate for each group ($Contacts/dyads/min/fish$) \newline
+ \textbf{Pop}: The group ID for each replicate. One level per group. \newline
+\textbf{Treatment}: Whether the group received an infected or uninfected index fish at the beginning of day 3. 2 levels. \newline
+\textbf{TempTreatment}: The treatment (infected or uninfected) of each group for each day. For every group it will be Unf on days 1 and 2 due to not having an index, but Inf for Infected treatments for days 3. 2 levels. \newline
+\textbf{Sex}: The sex of each individual. 2 levels, F for female, M for male. \newline
+\textbf{Inf.}: This is renamed to Infection in some subset data sets. Whether or not an individual was infected at the end of day 3. 2 levels, 1 - infected, 0-uninfected \newline
+\textbf{worms}: The number of worms on each individual at the end of day 3. \newline
+\textbf{prev}: Prevalence (proportion of infected individuals) for the group at the end of day 3. \newline
+\textbf{IndexWorm}: Number of worms on the index fish at the end of day 3. This is used as a metric for the amount of worms an individual will have been exposed to during intitial epidemic spread.  \newline
+\textbf{Index}: Whether the individual was an index fish or not. 2 levels, 0-not index, 1-index  \newline
+\textbf{ChConWithIn}: Change in contact with including the contacts with the index between days 2 and 3. \newline
+\textbf{ChConWOIn}: Change in contact with with only non-index individuals between days 2 and 3. \newline
+\textbf{ChConPop}: Change in the group average contact rate between days 2 and 3 \newline
+\textbf{PreSVL}: The snout to vent length of the guppy prior to introduction into behavioral arena. Measured in ($Millimeters$) \newline
+\textbf{PreWeight}: The weight of the individual prior to introduction into the behavior box. Measured in ($grams$) \newline
+\textbf{PostSVL}: The snout to vent length of the guppy after wrapping up entire experiment.  Measured in ($Millimeters$)  \newline
+\textbf{PostWeight}: The Weight of the guppy after wrapping up entire experiment.  Measured in ($grams$) \newline
+
+
+
+```{r importing data and defining key metrics and loading libraries, warning=F,message=FALSE}
+#Load in libraries for analysis and data wrangling
+#Visualization
+library(ggplot2)
+library(visreg)
+source("http://highstat.com/Books/BGS/GAMM/RCodeP2/HighstatLibV6.R")
+#(generalized) Linear mixed modeling
+library(lme4)
+library(glmmTMB)
+#Statistcal analysis reporting and model validation
+library(performance)
+library(car)
+library(lmtest)
+library(DHARMa)
+#Data wrangling
+library(dplyr)
+library(plyr)
+library(tidyverse)
+library(emmeans)
+
+#Importing the master data sheet check intro for description of factors
+#Choose X datasheet (specify when finished)
+PopulationContacts<-read.csv("IndividualContacts_20231212.csv")
+
+#Set data strcuture for some factors
+
+#Setting Day as a factor instead of a numeric
+PopulationContacts$Day<-as.factor(PopulationContacts$Day)
+#Setting whether a fish was an index (intitial infection) or not as factor
+PopulationContacts$Index<-as.factor(PopulationContacts$Index)
+#Setting whether an fish was infected or not as factor 
+PopulationContacts$Inf.<-as.factor(PopulationContacts$Inf.)
+#Setting whether fish were male or female as a factor
+PopulationContacts$Sex<-as.factor(PopulationContacts$Sex)
+#Setting the treatment of fish group (infected index or not) as factor
+PopulationContacts$Treatment<-as.factor(PopulationContacts$Treatment)
+#Setting population the fish were from as a factor
+PopulationContacts$Pop<-as.factor(PopulationContacts$Pop)
+
+
+
+#Calculating important metrics that may apply across all subsetting of data
+
+#Wormcontacts = Number of contacts a fish has had with infectious agents. So the multiplicative of contact rate with the infected index with the number of worms on the infected index
+PopulationContacts <- PopulationContacts %>%
+  mutate(
+    WormContact = IndexContact * IndexWorm
+    )
+#Assigning a fish label to the fish so that if we want to subset down to one metric for fish because not all metrics change across days. This currently doesnt work due to index only have day 3 measure
+#Fish<-c("1","0","0")
+
+#Adding this factor to overall data frame
+#PopulationContacts$Fish<-as.factor(Fish)
+
+#Overall summary just checking that everything looks okay.
+summary(PopulationContacts)
+
+```
+
+
+\subsection{Initial data exploration}
+
+```{r initial data exploration, warning=F}
+#Pairs plot to look at autocorrelation and potential relationships before diving into analysis
+pairs(~ContactRate+Day3ContactRatewoI+IndexContact+Sex+Inf.+IndexWorm+Treatment, lower.panel=panel.smooth, diag.panel=panel.hist, 
+upper.panel=panel.cor, data=PopulationContacts)
+
+
+
+#Ploting behavior by individual across groups 
+CRxDay<-ggplot(PopulationContacts, aes(Day, ContactRate, group=Ind))+geom_point()+geom_line()+theme_classic()+theme(legend.position="none", text=element_text(size=22))
+#Printing graph
+print(CRxDay)
+
+```
+
+\section{Individual Level Analysis}
+
+
+\subsection{Do hosts with higher worm burdens have less contacts in the population}
+```{r selection and subseting to data needed for index worm and contact analysis, warning=F}
+#Filtering down to only 
+#Getting index contact rate
+IndexOnly<-PopulationContacts%>%
+  filter(Day == 3)%>%
+  filter(Index=="1")%>%
+  select(Ind, Pop, ContactRate, Treatment, TempTreatment, Sex, Inf., IndexWorm, Index)
+#Getting non-index contact rates that are not with index. We thought it was better to take the contacts without index included for individuals to see if those correlated with index worm instead of including the index as well. 
+NonInOnly<-PopulationContacts%>%
+  filter(Day == 3)%>%
+  filter(Index=="0")%>%
+  select(Ind, Pop, Day3ContactRatewoI, Treatment, TempTreatment, Sex, Inf., IndexWorm, Index)%>%
+  dplyr::rename("ContactRate" = "Day3ContactRatewoI")
+
+#Combining data frames back together
+IndividualConIWDF<-bind_rows(IndexOnly, NonInOnly)
+#Incase we want to subset down to infected only
+#IndividualConIWDFInf<-IndividualConIWDF%>%
+  #filter(Treatment == "Inf")
+
+
+#Making sure the filtering worked. Commented out for overall ease of running
+#summary(IndividualConIWDF)
+#Linear model to determine if contact rate explains IndexWorm 
+# IndividualConIWDF <- IndividualConIWDF%>%
+#   filter(TempTreatment == "Inf")
+
+InfIndlm <-lm(ContactRate~IndexWorm, IndividualConIWDF)
+summary(InfIndlm)
+visreg(InfIndlm, "IndexWorm")
+
+```
+
+We don't seem to have a positive correlation between how infected an index was and its contact rate either with its own contact or contacts from other conspecifics in the population.
+
+
+\subsubsection{Are hosts with higher contact rate more likely to become infected?}
+
+For this first bit we need to select the data we need to answer this specific question
+```{r selection and subseting to data needed for this analysis, warning=F}
+#Filtering down to only infected treatments, individuals who are not the index, one measure per fish and days 2 and 3. Note the days 2 and 3 is because intitial viewing of behaviors across days looks like fish were not behaving normally on day 1 due to acclimation to the new environment.
+IndividualInfDF<-PopulationContacts%>%
+  filter(Treatment == "Inf")%>%
+  filter(Index == "0")%>%
+  filter(Day == 2 | Day == 3)%>%
+  dplyr::rename("Infection"="Inf.")
+#Making sure the filtering worked. Commented out for overall ease of running
+#summary(IndividualInfDF)
+
+#Creating a dataframe for day 3 only
+IndividualInfDFD3<-IndividualInfDF%>%
+  filter(Day==3)
+
+#Creating a dataframe for day 2 only
+IndividualInfDFD2<-IndividualInfDF%>%
+  filter(Day==2)
+
+```
+
+\subsubsection{Now we need to examine correlation between variables}
+```{r visual and correlational test for autocorrelation for models, warning=F}
+
+pairs(~ContactRate+Sex+Infection+IndexWorm+Treatment, lower.panel=panel.smooth, diag.panel=panel.hist, 
+upper.panel=panel.cor, data=IndividualInfDF)
+
+```
+
+\subsubsection{Fitting the contact rate versus probability of infection model}
+
+We're fitting a binomial generalized linear mixed model with sex and the day 2 contact rate as predictor variables and whether or not a host became infected as the response. We have population as a random effect to control for non-independence of contact rate between individauls within the same group.
+
+```{r fitting the glmmTMB for prob of infection and contact rate, warnging=F}
+
+#Linear model to determine if individual sociality explained the probability of becoming infected
+
+InfCRlm<-glmmTMB(Infection~ContactRate+Sex+(1|Pop),  IndividualInfDFD2, family=binomial)
+
+#Summary of fitted model parameters
+summary(InfCRlm)
+
+```
+
+\subsubsection{Next we see will validate the model to make sure everything is looking good.}
+
+```{r model validation for prob of infection vs ContactRate, warning=F}
+#Using DHARMa package to look at quantile residuals to validate the model fit
+sim_residuals_InfCRlm <-simulateResiduals(InfCRlm, 1000)  #Quantile residuals
+#Ploting the quantile residuals
+plot(sim_residuals_InfCRlm) 
+#Testing dispersion
+testDispersion(sim_residuals_InfCRlm)
+
+#Below we are exmaining the quantile residuals among the fixed variables to see if there are any funky patterns. Excluded from main run for space but remove # to see plots
+#plotResiduals(sim_residuals_InfCRlm, IndividualInfDFD2$Sex)
+#plotResiduals(sim_residuals_InfCRlm, IndividualInfDFD2$ContactRate)
+```
+
+
+Model validation looks good!
+
+\subsubsection{Likelihood ratio test to test for significance in our model}
+
+```{r Likelihood ratio test for prob of inf with Sociality, warning=F}
+#Drop 1 with chisq test to do a likelihood ratio test for our model
+drop1(InfCRlm, test="Chisq")
+
+#Some odds ratios calculations
+#EmmInfCRlm<-emmeans(InfCRlm, pairwise~Sex, type="response")
+#EmmInfCRlm
+```
+
+\subsubsection{Visualization of the relationships between variables}
+
+```{r Visualization of the relation for prob inf and contactrate/sex, warning=F}
+#Visreg of contact rate effect
+InfCRvr<-visreg(InfCRlm, "ContactRate", scale="response", rug=FALSE, gg=TRUE)+geom_point()+xlab("Contact Rate (Contact/dyad/min.)")+ylab("Chance of being infected on Day 3")+theme_classic()+theme(text=element_text(size=18))
+print(InfCRvr)
+
+#Plotting the relationship of Contact rate and sex
+#InfCRSXvr<-visreg(InfCRlm, "ContactRate", "Sex", scale="response", rug=FALSE, gg=TRUE)+geom_point()+xlab("Contact Rate (Contact/dyad/min.)")+ylab("Chance of being infected on Day 3")+theme_classic()+theme(text=element_text(size=18))
+#print(InfCRSXvr)
+
+#Visreg of Sex effect for later plotting
+SXlabs<-c("Female", "Male")
+InfCRSXvr<-visreg(InfCRlm, "Sex", scale="response", rug=FALSE, plot=FALSE)
+InfSXvrfit<-InfCRSXvr$fit
+InfSXvrres<-InfCRSXvr$res
+#ggplot code to make ggplot for sex effect
+InfSX<-ggplot(InfSXvrres, aes(x=Sex, y=visregRes, fill=Sex))+geom_boxplot()+geom_jitter()+theme_classic()+theme(text=element_text(size=18))+scale_fill_manual(values=c("lightblue", "lightgray"))+xlab(" ")+ylab("Chance of being infected on Day 3")+theme(legend.position="none")+scale_x_discrete(labels=SXlabs)
+print(InfSX)
+```
+
+
+This whole analysis was looking at an individuals day 2 sociality so focusing on how social they were before infection was introduced to the population, but we do not know how that actually correlates with how social they choose to be once infection has entered the population.
+
+\subsubsection{Quick test to see how correlated Day 2 and Day 3 contact rates are for populations}
+
+```{r qucik correlation plot/analysis to ensure day 2 sociality lines up with day 3 and we should repeat this analysis with day 3, warning=F}
+#I am putting all this code together since its just a verification step instead of each part having its own section.
+#Subsetting and pivoting to what we want
+IndividualInfDFcorr<-PopulationContacts%>%
+  filter(Treatment == "Inf")%>%
+  filter(Index == "0")%>%
+  filter(Day == 2 | Day == 3)%>%
+  select(-c(Day3ContactRatewoI,IndexContact,Popavg,Pop,Treatment,TempTreatment, Sex, Inf.,worms,prev,IndexWorm,Index,ChConWithIn, ChConWOIn,ChConPop,PreSVL,PreWeight,PostSVL,PostWeight,WormContact))%>%
+  pivot_wider(names_from=Day, values_from = ContactRate)%>%
+  dplyr::rename("Day2"="2")%>%
+  dplyr::rename("Day3"="3")
+#Quick linear model to see how correlated they are
+CRcorr<-lm(Day2~Day3,IndividualInfDFcorr)
+#Summary showing significant positive relationship
+summary(CRcorr)
+#Correlation test to show cor value
+cor.test(x=IndividualInfDFcorr$Day2,y=IndividualInfDFcorr$Day3)
+
+
+```
+
+Test shows they are pretty correlated so no need to repeat the analysis with day 3 sociality. Code is commented out for ease of viewing the document.
+
+
+\subsection{Does index infection load also predict the transmission of parasites?}
+
+
+Next we need to subset specifically to the infection loads of the group and what it means for probability of transmission. Given each group only had one index load, the linear model will give us group means and how it predicts prevalence.
+
+```{r selection and subseting to data needed for infection load versus probability of transmission}
+#Filtering down to only infected treatments, individuals who are not the index, one measure per fish and days 2 and 3. Note the days 2 and 3 is because intitial viewing of behaviors across days looks like fish were not behaving normally on day 1 due to acclimation to the new environment.
+IndividualInfDF<-PopulationContacts%>%
+  filter(Treatment == "Inf")%>%
+  filter(Index == "0")%>%
+  filter(Day == 2 | Day == 3)%>%
+  dplyr::rename("Infection"="Inf.")
+#Making sure the filtering worked. Commented out for overall ease of running
+#summary(IndividualInfDF)
+
+#Creating a dataframe for day 3 only
+IndividualInfDFD3<-IndividualInfDF%>%
+  filter(Day==3)
+```
+
+
+\subsubsection{Now we need to examine correlation between variables}
+
+```{r visual and correlational test for autocorrelation for Probability of infection and index infection load, warning=F}
+
+pairs(~Infection+Sex+IndexWorm, lower.panel=panel.smooth, diag.panel=panel.hist, 
+upper.panel=panel.cor, data=IndividualInfDF)
+
+```
+
+\subsubsection{Fitting the  probability of infection versus Infection load model}
+
+We're fitting a binomial generalized linear mixed model with sex and the index infection load as predictor variables and whether or not a host became infected as the response. We have population as a random effect to control for non-independence of index infection load between individauls within the same group.
+
+```{r fitting the glmmTMB for prob of infection and Index Worm load}
+
+#Linear model to determine if individual sociality explained the probability of becoming infected
+
+InfbyIndexWlm<-glmmTMB(Infection~IndexWorm+Sex+(1|Pop),  IndividualInfDFD3, family=binomial)
+
+#Summary of fitted model parameters
+summary(InfbyIndexWlm)
+
+```
+
+\subsubsection{Next we see will validate the infeciton by index worm model to make sure everything is looking good.}
+
+```{r model validation for prob of infection vs Index worm burden}
+#Using DHARMa package to look at quantile residuals to validate the model fit
+sim_residuals_InfbyIndexWlm <-simulateResiduals(InfbyIndexWlm, 1000)  #Quantile residuals
+#Ploting the quantile residuals
+plot(sim_residuals_InfbyIndexWlm) 
+#Testing dispersion
+testDispersion(sim_residuals_InfbyIndexWlm)
+
+#Below we are exmaining the quantile residuals among the fixed variables to see if there are any funky patterns. Excluded from main run for space but remove # to see plots
+#plotResiduals(sim_residuals_InfCRlm, IndividualInfDFD2$Sex)
+#plotResiduals(sim_residuals_InfCRlm, IndividualInfDFD2$IndexWorm)
+```
+
+Infection by Index worm model validation looks good!
+
+\subsubsection{Likelihood ratio test to test for significance of our fixed effects in the model}
+
+```{r Likelihood ratio test for prob of inf with IndexWorm}
+#Drop 1 with chisq test to do a likelihood ratio test for our model
+drop1(InfbyIndexWlm, test="Chisq")
+
+```
+
+\subsubsection{Visualization of the relationships between probability of infection and host sociality}
+
+```{r Visualization of the relation for prob inf and IndexWorm load/sex}
+#Visual examination of the partial residuals and fit of the model for Index worm
+InfIWvr<-visreg(InfbyIndexWlm, "IndexWorm", scale="response", partial=T, rug=FALSE, gg=TRUE)+geom_point()+xlab("Number of worms on index fish")+ylab("Chance of being infected on Day 3")+theme_classic()+theme(text=element_text(size=18))
+print(InfIWvr)
+
+
+#Plotting the relationship of probability of infection by IndexWorm and sex
+#InfIWxSxvr<-visreg(InfbyIndexWlm, "IndexWorm", "Sex", scale="response", rug=FALSE, gg=TRUE)+geom_point()+xlab("Number of worms on index fish")+ylab("Chance of being infected on Day 3")+theme_classic()+theme(text=element_text(size=18))
+#print(InfIWxSxvr)
+
+```
+
+Overall we are seeing that Infection load does a better job at predicting the transmission of parasites relative to contact rate of the individual. Current literature suggests that mechanistically the transmission of parasites is a combination of both of these traits so next we should see what their additive effect is on an individauls likelihood of transmission
+
+\subsection{Do both these factors together better predict parasite spread than either alone?}
+
+```{r selection and subseting to data needed for the combination of index worm and contact rate}
+#Filtering down to only infected treatments, individuals who are not the index, one measure per fish and days 2 and 3. Note the days 2 and 3 is because intitial viewing of behaviors across days looks like fish were not behaving normally on day 1 due to acclimation to the new environment.
+IndividualInfWCDF<-PopulationContacts%>%
+  filter(Treatment == "Inf")%>%
+  filter(Index == "0")%>%
+  filter(Day == 3)%>%
+  dplyr::rename("Infection"="Inf.")
+#Making sure the filtering worked. Commented out for overall ease of running
+#summary(IndividualInfWCDF)
+
+IndividualInfWCDF <- IndividualInfWCDF %>%
+  mutate(
+    WormContact = IndexContact * IndexWorm)
+```
+
+
+\subsubsection{Now we need to examine correlation between variables for this set of the analysis}
+
+
+```{r visual and correlational test for autocorrelation for WormContact models, warning=F}
+
+pairs(~Infection+WormContact+Sex, lower.panel=panel.smooth, diag.panel=panel.hist, 
+upper.panel=panel.cor, data=IndividualInfWCDF)
+
+```
+
+\subsubsection{Fitting the  probability of infection versus Index worm by contact rate model}
+
+We're fitting a binomial generalized linear mixed model with sex and the index infection load multiplied by contact rate (hereafter WormContact) as predictor variables and whether or not a host became infected as the response. We have population as a random effect to control for non-independence of WormContact between individauls within the same group.
+
+```{r fitting the glmmTMB for prob of infection and WormContact load}
+
+#Linear model to determine if WormContact explained the probability of becoming infected
+
+InfbyWClm<-glmmTMB(Infection~WormContact+Sex+(1|Pop),  IndividualInfWCDF, family=binomial)
+
+#Summary of fitted model parameters
+summary(InfbyWClm)
+
+```
+
+
+\subsubsection{Next we see will validate the model to make sure everything is looking good.}
+
+```{r model validation for prob of infection vs WormContact}
+#Using DHARMa package to look at quantile residuals to validate the model fit
+sim_residuals_InfWClm <-simulateResiduals(InfbyWClm, 1000)  #Quantile residuals
+#Ploting the quantile residuals
+plot(sim_residuals_InfWClm) 
+#Testing dispersion
+testDispersion(sim_residuals_InfWClm)
+
+#Below we are exmaining the quantile residuals among the fixed variables to see if there are any funky patterns. Excluded from main run for space but remove # to see plots
+#plotResiduals(sim_residuals_InfCRlm, IndividualInfDFD2$Sex)
+#plotResiduals(sim_residuals_InfCRlm, IndividualInfDFD2$ContactRate)
+```
+
+
+
+While the model validation shows a little deviation from quantile range, it still looks pretty good. We can continue with the analysis.
+
+\subsubsection{Likelihood ratio test to test for significance of our fixed effects in the model}
+
+```{r Likelihood ratio test for prob of inf with WormContact}
+#Drop 1 with chisq test to do a likelihood ratio test for our model
+drop1(InfbyWClm, test="Chisq")
+
+```
+
+
+\subsubsection{Visualization of the relationships between probability of infection and the contact rate of hosts multiplied by index worm load}
+
+```{r Visualization of the relation for prob inf and WormContact/sex}
+#Visual examination of the partial residuals and fit of the model for Index worm
+InfWCvr<-visreg(InfbyWClm, "WormContact", scale="response", partial=T, rug=FALSE, gg=TRUE)+geom_point()+xlab("Index worm load*Contact Rate")+ylab("Chance of being infected on Day 3")+theme_classic()+theme(text=element_text(size=18))
+print(InfWCvr)
+
+
+#Plotting the relationship of probability of infection by WormContact and sex
+#InfWCxSxvr<-visreg(InfbyIndexWlm, "WormContact", "Sex", scale="response", rug=FALSE, gg=TRUE)+geom_point()+xlab("Number of worms on index fish")+ylab("CIndex worm load*Contact Rate")+theme_classic()+theme(text=element_text(size=18))
+#print(InfWCxSxvr)
+
+```
+
+Worm Contacts does a relatively good job fitting the data. However we need to check and see if it actually does better than the other two models we fit trying to predict the probability of transmission
+
+\subsubsection{AIC model selection to see which model has the best fit to our data}
+
+```{r AIC model selection to determine which model is best fit for our data}
+
+#AIC model selection to determine which model is the best fit for our data
+AIC(InfbyWClm, InfbyIndexWlm, InfCRlm)
+
+```
+
+Overall, AIC model selection is showing that the probability of infection model with index worm load is a better fit overall than both the other candidates. The AIC for our index infection burden model is greater than two difference than either model so it seems that best predicts the transmission of parasites. 
+
+```{r}
+
+
+InfbyIClm<-glmmTMB(Infection~IndexContact+IndexWorm+Sex+(1|Pop),  IndividualInfWCDF, family=binomial)
+
+#Summary of fitted model parameters
+summary(InfbyIClm)
+
+
+InfICvr<-visreg(InfbyIClm, "IndexContact", scale="response", partial=T, rug=FALSE, gg=TRUE)+geom_point()+xlab("Contact rate with index")+ylab("Chance of being infected on Day 3")+theme_classic()+theme(text=element_text(size=18))
+print(InfICvr)
+
+performance::r2(InfbyIClm)
+VarCorr(InfbyIClm)
+
+vc_fixed <- as.matrix(vcov(InfbyIClm))
+vc_fixed
+var_fixed <- diag(vc_fixed); var_fixed
+```
+
