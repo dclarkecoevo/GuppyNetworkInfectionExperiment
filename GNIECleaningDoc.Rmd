@@ -1,0 +1,146 @@
+---
+title: "Data cleaning and management document for Guppy Network Infection Experiment (GNIE)"
+author: "David R. Clark"
+date: "2024-07-16"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(tidy.opts=list(width.cutoff=70), tidy=TRUE)
+
+```
+
+```{r load in packages}
+
+#Load in packages 
+#Load in libraries for analysis and data wrangling
+#Visualization
+library(ggplot2)
+library(visreg)
+source("http://highstat.com/Books/BGS/GAMM/RCodeP2/HighstatLibV6.R")
+#(generalized) Linear mixed modeling
+library(lme4)
+library(glmmTMB)
+#Statistcal analysis reporting and model validation
+library(performance)
+library(car)
+library(lmtest)
+library(DHARMa)
+#Data wrangling
+library(dplyr)
+library(plyr)
+library(tidyverse)
+library(tidylog)
+library(readr)
+
+
+```
+
+```{r load in data for GNIE data wrangling and cleaning}
+#Loading in data frame with important details
+PopContacts <- read.csv("GNIE_Contacts_Worm_Counts_20240717.csv")
+View(PopContacts)
+
+```
+
+```{r subsetting data to only ones we need for our current analysis}
+#Subsetting data frame down to days 1,2,and 3
+PopContactsDay1_3<- PopContacts %>%
+  filter(experiment_day == 1 | experiment_day == 2 | experiment_day ==3) 
+
+#Subsetting and calculating total contacts
+PopContactssum<- PopContactsDay1_3 %>%
+  #group by population, day, and fishID for calculation
+  group_by(population, experiment_day, fishBOverallID) %>%
+  #calculate the contacts and include details needed for analysis
+  dplyr::summarise(TotalContacts = mean(total_num_contacts), 
+            Contactinit = sum(contacts_B_init), 
+            Sex=unique(fishBSex), 
+            worms=unique(fishBWormCount), 
+            IndexWorm = unique(IndexWorm),
+            InfectionTrt = unique(Infection)
+            )%>%
+  #ungroup the factors
+  ungroup()
+
+#rename some variables for ease during analysis step.
+PopContactssum <- PopContactssum %>%
+rename(day = experiment_day, fishID = fishBOverallID)
+
+#Quickly view to make sure everything looks good
+#View(PopContactssum)
+```
+
+
+```{r creating a day 3 only datasheet}
+#Calculating index contacts
+PopContactsDay3<- PopContacts %>%
+  #first filter down to day 3 and only contacts with index
+  filter( experiment_day == 3 & fishAOverallID == 10) %>%
+  #group for calculation of index contacts
+  group_by(population, fishBOverallID) %>%
+  #calculate contacts with index during each video during day 3 and sum them together
+  mutate(IndexContact_init = sum(contacts_B_init))%>%
+  #rename variables for ease of merging and analysis
+  rename(fishID = fishBOverallID)%>%
+  #select relevant columns for merging
+  select(population, fishID, IndexContact_init)%>%
+  #subsetting down to one row per individual 
+  distinct(fishID, .keep_all=TRUE)
+
+#Adding index individuals back in since the step before will remove them during merge
+PopContactssum10 <- PopContactssum %>%
+  #filtering down to index only
+  filter(fishID == 10)%>%
+  #create the index column with NAs
+  mutate(IndexContact_init = NA)
+
+#Merge the index contact data frame back to main dataframe for analysis
+PopContactssum2<-merge(PopContactssum, PopContactsDay3, by=c("population", "fishID"), .keep=all)
+
+#Bring index individuals back into the main dataframe
+PopContactssum2<-rbind(PopContactssum2, PopContactssum10)
+
+
+#Create a new variable for infection status of each individaul
+PopContactssum2 <- PopContactssum2 %>%
+  mutate(
+    Infectionstat = case_when(
+      worms >= 1 ~ 1,
+      worms < 1 ~ 0,
+      is.na(worms) ~ 0
+    )
+  )
+
+#Create a new variable for worm contacts (the number of contacts multiplied by the number of worms)
+PopContactssum2<-PopContactssum2 %>%
+  mutate(wormcontact = IndexWorm * IndexContact_init)
+
+
+#Create a new variable indicating whether each individual is an index or not
+PopContactssum2<-PopContactssum2 %>%
+  mutate(
+    Index = case_when(
+      fishID == 10 ~ 1,
+      fishID < 10 ~ 0
+    )
+  )
+```
+
+```{r data checking}
+#Setting data as factors
+PopContactssum2$population<-as.factor(PopContactssum2$population)
+PopContactssum2$fishID<-as.factor(PopContactssum2$fishID)
+PopContactssum2$day<-as.factor(PopContactssum2$day)
+PopContactssum2$Sex<-as.factor(PopContactssum2$Sex)
+PopContactssum2$Index<-as.factor(PopContactssum2$Index)
+PopContactssum2$InfectionTrt<-as.factor(PopContactssum2$InfectionTrt)
+PopContactssum2$Infectionstat<-as.factor(PopContactssum2$Infectionstat)
+
+#summary checking the data
+summary(PopContactssum2)
+
+```
+
+
