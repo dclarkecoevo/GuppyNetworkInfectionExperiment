@@ -42,34 +42,61 @@ library(readr)
 PopContacts <- read.csv("GNIE_Contacts_Worm_Counts_20240717.csv")
 View(PopContacts)
 
+#renaming some of the variables we will be working with
+PopContacts <- PopContacts %>% rename(day = experiment_day, fishID = fishBOverallID, Sex = fishBSex, worms = fishBWormCount, InfectionTrt = Infection)%>%
+  mutate(ContactInitR = contacts_B_init/frame_num)
+
+#Creating some new variables to use in our analysis 
+
+#Create a new variable indicating whether each individual is an index or not
+PopContacts<-PopContacts %>%
+  mutate(
+    Index = case_when(
+      fishID == 10 ~ 1,
+      fishID < 10 ~ 0
+    )
+  )
+
 ```
 
 ```{r subsetting data to only ones we need for our current analysis}
 #Subsetting data frame down to days 1,2,and 3
 PopContactsDay1_3<- PopContacts %>%
-  filter(experiment_day == 1 | experiment_day == 2 | experiment_day ==3) 
+  filter(day == 1 | day == 2 | day ==3)
+
+
 
 #Subsetting and calculating total contacts
 PopContactssum<- PopContactsDay1_3 %>%
   #group by population, day, and fishID for calculation
-  group_by(population, experiment_day, fishBOverallID) %>%
+  group_by(population, day, fishID) %>%
   #calculate the contacts and include details needed for analysis
-  dplyr::summarise(TotalContacts = mean(total_num_contacts), 
-            Contactinit = sum(contacts_B_init), 
-            Sex=unique(fishBSex), 
-            worms=unique(fishBWormCount), 
+  dplyr::summarise(TotalContactR = sum(total_num_contacts)/frame_num, 
+            Contactinit = sum(ContactInitR), 
+            Sex=unique(Sex), 
+            worms=unique(worms), 
             IndexWorm = unique(IndexWorm),
-            InfectionTrt = unique(Infection)
+            InfectionTrt = unique(InfectionTrt)
             )%>%
-  #ungroup the factors
-  ungroup()
+  distinct(fishID, .keep_all=TRUE)
 
-#rename some variables for ease during analysis step.
-PopContactssum <- PopContactssum %>%
-rename(day = experiment_day, fishID = fishBOverallID)
+#Create the contacts without the index included
+PopContactswoI <-PopContactsDay1_3 %>%
+  filter(day == 3 & Index == 0 & fishAOverallID != 10)%>%
+  group_by(population, day, fishID)%>%
+  mutate(ContactwoI = sum(ContactInitR))%>%
+  select(population, fishID, ContactwoI)%>%
+  distinct(fishID, .keep_all=TRUE)%>%
+  ungroup()%>%
+  select(-c(day))
+
+#Merge this column back into the main dataset
+PopContactssum2<-merge(PopContactssum, PopContactswoI, by=c("population", "fishID"), .keep=all)
+
+
 
 #Quickly view to make sure everything looks good
-#View(PopContactssum)
+#View(PopContactssum2)
 ```
 
 
@@ -77,34 +104,14 @@ rename(day = experiment_day, fishID = fishBOverallID)
 #Calculating index contacts
 PopContactsDay3<- PopContacts %>%
   #first filter down to day 3 and only contacts with index
-  filter( experiment_day == 3 & fishAOverallID == 10) %>%
+  filter( day == 3 & fishAOverallID == 10) %>%
   #group for calculation of index contacts
-  group_by(population, fishBOverallID) %>%
+  group_by(population, fishID) %>%
   #calculate contacts with index during each video during day 3 and sum them together
-  mutate(IndexContact_init = sum(contacts_B_init))%>%
-  #rename variables for ease of merging and analysis
-  rename(fishID = fishBOverallID)%>%
-  #select relevant columns for merging
-  select(population, fishID, IndexContact_init)%>%
-  #subsetting down to one row per individual 
-  distinct(fishID, .keep_all=TRUE)
-
-#Adding index individuals back in since the step before will remove them during merge
-PopContactssum10 <- PopContactssum %>%
-  #filtering down to index only
-  filter(fishID == 10)%>%
-  #create the index column with NAs
-  mutate(IndexContact_init = NA)
-
-#Merge the index contact data frame back to main dataframe for analysis
-PopContactssum2<-merge(PopContactssum, PopContactsDay3, by=c("population", "fishID"), .keep=all)
-
-#Bring index individuals back into the main dataframe
-PopContactssum2<-rbind(PopContactssum2, PopContactssum10)
-
+  mutate(IndexContact_init = sum(ContactInitR))
 
 #Create a new variable for infection status of each individaul
-PopContactssum2 <- PopContactssum2 %>%
+PopContactsDay3 <- PopContactsDay3 %>%
   mutate(
     Infectionstat = case_when(
       worms >= 1 ~ 1,
@@ -113,34 +120,77 @@ PopContactssum2 <- PopContactssum2 %>%
     )
   )
 
+PopContactsDay3<- PopContactsDay3 %>% 
+  select(population, fishID, IndexContact_init, Infectionstat)%>%
+  #subsetting down to one row per individual 
+  distinct(fishID, .keep_all=TRUE)
+
+#Adding index individuals back in since the step before will remove them during merge
+PopContactssum10 <- PopContactssum %>%
+  #filtering down to index only
+  filter(fishID == 10)%>%
+  #create the index column with NAs
+  mutate(IndexContact_init = NA,
+         ContactwoI = NA)
+
+#Creating the same metric for index fish
+PopContactssum10 <- PopContactssum10 %>%
+  mutate(
+    Infectionstat = case_when(
+      worms >= 1 ~ 1,
+      worms < 1 ~ 0,
+      is.na(worms) ~ 0
+    )
+  )
+
+
+#Merge the index contact data frame back to main dataframe for analysis
+PopContactssum3<-merge(PopContactssum2, PopContactsDay3, by=c("population", "fishID"), .keep=all)
+
+
+
+#Bring index individuals back into the main dataframe
+PopContactssum4<-rbind(PopContactssum3, PopContactssum10)
+
+
 #Create a new variable for worm contacts (the number of contacts multiplied by the number of worms)
-PopContactssum2<-PopContactssum2 %>%
+PopContactssum4<-PopContactssum4 %>%
   mutate(wormcontact = IndexWorm * IndexContact_init)
 
 
 #Create a new variable indicating whether each individual is an index or not
-PopContactssum2<-PopContactssum2 %>%
+PopContactssum4<-PopContactssum4 %>%
   mutate(
     Index = case_when(
       fishID == 10 ~ 1,
-      fishID < 10 ~ 0
+      fishID != 10 ~ 0
     )
   )
+
+
+
 ```
 
 ```{r data checking}
 #Setting data as factors
-PopContactssum2$population<-as.factor(PopContactssum2$population)
-PopContactssum2$fishID<-as.factor(PopContactssum2$fishID)
-PopContactssum2$day<-as.factor(PopContactssum2$day)
-PopContactssum2$Sex<-as.factor(PopContactssum2$Sex)
-PopContactssum2$Index<-as.factor(PopContactssum2$Index)
-PopContactssum2$InfectionTrt<-as.factor(PopContactssum2$InfectionTrt)
-PopContactssum2$Infectionstat<-as.factor(PopContactssum2$Infectionstat)
+PopContactssum4$population<-as.factor(PopContactssum4$population)
+PopContactssum4$fishID<-as.factor(PopContactssum4$fishID)
+PopContactssum4$day<-as.factor(PopContactssum4$day)
+PopContactssum4$Sex<-as.factor(PopContactssum4$Sex)
+PopContactssum4$Index<-as.factor(PopContactssum4$Index)
+PopContactssum4$InfectionTrt<-as.factor(PopContactssum4$InfectionTrt)
+PopContactssum4$Infectionstat<-as.factor(PopContactssum4$Infectionstat)
 
 #summary checking the data
 summary(PopContactssum2)
 
 ```
+
+```{r exporint the dataframe for use in another document}
+
+write.csv(PopContactssum4, "IndividualContacts_20240719.csv")
+
+```
+
 
 
