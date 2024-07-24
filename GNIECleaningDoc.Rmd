@@ -93,8 +93,18 @@ PopContactswoI <-PopContactsDay1_3 %>%
 #Merge this column back into the main dataset
 PopContactssum2<-merge(PopContactssum, PopContactswoI, by=c("population", "fishID"), .keep=all)
 
+PopContactssumCh<-PopContactssum2%>% 
+  filter(day == 2 | day == 3)%>%
+  select(-c(worms,InfectionTrt, ContactwoI))%>%
+  group_by(population, fishID)%>%
+  pivot_wider(names_from = day, values_from = c(TotalContactR, Contactinit))%>%
+  mutate(TotalCRCh=TotalContactR_3-TotalContactR_2, CRinitCh = Contactinit_3-Contactinit_2)%>%
+  select(-c(TotalContactR_3,TotalContactR_2,Contactinit_3,Contactinit_2, Sex, IndexWorm))
 
 
+PopContactssum2<-merge(PopContactssum2, PopContactssumCh, by=c("population", "fishID"), .keep=all)
+
+  
 #Quickly view to make sure everything looks good
 #View(PopContactssum2)
 ```
@@ -131,7 +141,9 @@ PopContactssum10 <- PopContactssum %>%
   filter(fishID == 10)%>%
   #create the index column with NAs
   mutate(IndexContact_init = NA,
-         ContactwoI = NA)
+         ContactwoI = NA,
+         TotalCRCh = NA,
+         CRinitCh = NA)
 
 #Creating the same metric for index fish
 PopContactssum10 <- PopContactssum10 %>%
@@ -166,9 +178,6 @@ PopContactssum4<-PopContactssum4 %>%
       fishID != 10 ~ 0
     )
   )
-
-
-
 ```
 
 ```{r data checking}
