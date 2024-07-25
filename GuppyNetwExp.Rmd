@@ -99,7 +99,7 @@ PopulationContacts<-read.csv("IndividualContacts_20240719.csv")
 #Set data strcuture for some factors
 
 PopulationContacts<-PopulationContacts%>%
-  select(-c(X, Day)
+  select(-c(X))
 
 #Setting Day as a factor instead of a numeric
 PopulationContacts$Day<-as.factor(PopulationContacts$day)
@@ -134,6 +134,10 @@ IndividualInfDFIn<-PopulationContacts %>%
 ```
 
 ```{r fit a model looking at contact with index with and without worms}
+
+cpsex=c("darkseagreen4","lightsalmon3")
+
+cpinf=c("cornsilk4","brown4")
 #fitting a model for contacts initiated by infection treatment 
 IndexContacts<-glm(Contactinit~InfectionTrt, family=Gamma(link="log"), IndividualInfDFIn )
 #Looking at the summary of the model
@@ -148,7 +152,7 @@ IndexContactsVR<-visreg(IndexContacts, "InfectionTrt", scale="response", plot=FA
 IndexContactsVRfit<-IndexContactsVR$fit
 IndexContactsVRres<-IndexContactsVR$res
 
-ggplot(IndexContactsVRres, aes(x=InfectionTrt, y=visregRes, fill=InfectionTrt))+geom_boxplot(outliers=FALSE)+geom_jitter()+ylab("Contacts initiated by index")+xlab("Infection Treatment")+theme_classic()+theme(text=element_text(size=18))+theme(legend.position="none")
+ggplot(IndexContactsVRres, aes(x=InfectionTrt, y=visregRes, fill=InfectionTrt))+geom_boxplot(outliers=FALSE)+geom_jitter()+ylab("Contacts initiated by index")+xlab("Infection Treatment")+theme_classic()+theme(text=element_text(size=18))+theme(legend.position="none")+scale_fill_manual(values=cpinf)
 
 
 
@@ -172,7 +176,7 @@ IndexContactsRecVRres<-IndexContactsRecVR$res
 
 
 
-ggplot(IndexContactsRecVRres, aes(x=InfectionTrt, y=visregRes, fill=InfectionTrt))+geom_boxplot(outliers=FALSE)+geom_jitter()+ylab("Contacts recevied by index")+xlab("Infection Treatment")+theme_classic()+theme(text=element_text(size=18))+theme(legend.position="none")
+ggplot(IndexContactsRecVRres, aes(x=InfectionTrt, y=visregRes, fill=InfectionTrt))+geom_boxplot(outliers=FALSE)+geom_jitter()+ylab("Contacts recevied by index")+xlab("Infection Treatment")+theme_classic()+theme(text=element_text(size=18))+theme(legend.position="none")+scale_fill_manual(values=cpinf)
 
 
 ```
@@ -256,7 +260,7 @@ We're fitting a binomial generalized linear mixed model with sex and the day 2 c
 
 #Linear model to determine if individual sociality explained the probability of becoming infected
 
-InfCRlm<-glmmTMB(Infectionstat~Contactinit+Sex+(1|population),  IndividualInfDFD2, family=binomial())
+InfCRlm<-glmmTMB(Infectionstat~Contactinit+Sex+CRinitCh+(1|population),  IndividualInfDFD2, family=binomial())
 
 
 #Summary of fitted model parameters
@@ -302,7 +306,8 @@ InfSxlmVRfit<-InfSxlmVR$fit
 InfSxlmVRres<-InfSxlmVR$res
 
 
-ggplot(InfSxlmVRres, aes(x=Sex, visregRes))+geom_boxplot()+geom_jitter()+theme_classic()+theme(text=element_text(size=20))+xlab(" ")+ylab("Chance of infection on Day 3")
+ggplot(InfSxlmVRres, aes(x=Sex, visregRes, fill=Sex))+geom_boxplot()+geom_jitter()+theme_classic()+theme(text=element_text(size=20))+xlab(" ")+ylab("Chance of infection on Day 3")+scale_fill_manual(values=cpsex)+theme(legend.position="none")+scale_x_discrete(breaks=c("F","M"),
+      labels=c("Females", "Males"))
 
 ```
 
@@ -310,13 +315,9 @@ ggplot(InfSxlmVRres, aes(x=Sex, visregRes))+geom_boxplot()+geom_jitter()+theme_c
 ```{r Visualization of the relation for prob inf and sex, warning=F}
 # #Visreg of contact rate effect
 #
-InfCRlmVR<-visreg(InfCRlm, "Contactinit", scale="response", partial=TRUE, plot=FALSE)
+InfCRlmVR<-visreg(InfCRlm, "CRinitCh", scale="response", partial=TRUE, gg=TRUE, rug=FALSE)+xlab("Change in initiated contact rate")+ylab("Chance of infection on Day 3")+theme_classic()+theme(text=element_text(size=20))
 
-InfCRlmVRfit<-InfCRlmVR$fit
-InfCRlmVRres<-InfCRlmVR$res
-
-
-ggplot(InfCRlmVRfit, aes(x=Contactinit, visregFit))+geom_smooth(method="lm")+theme_classic()+geom_point(data=InfCRlmVRres, aes(x=Contactinit, visregRes))+xlab("Initiated contact rate")+ylab("Chance of infection on Day 3")+theme(text=element_text(size=22))
+print(InfCRlmVR)
 
 ```
 
@@ -427,7 +428,7 @@ print(InfIWvr)
 
 
 #Plotting the relationship of probability of infection by IndexWorm and sex
-InfIWxSxvr<-visreg(InfbyIndexWlm, "IndexContact_init", "Sex", scale="response", rug=FALSE, gg=TRUE)+geom_point()+xlab("Initated contact with index rate")+ylab("Chance of being infected on Day 3")+theme_classic()+theme(text=element_text(size=18))
+InfIWxSxvr<-visreg(InfbyIndexWlm, "IndexContact_init", "Sex", scale="response", rug=FALSE, gg=TRUE, overlap=TRUE)+geom_point()+xlab("Initated contact with index rate")+ylab("Chance of being infected on Day 3")+theme_classic()+theme(text=element_text(size=18))
 print(InfIWxSxvr)
 
 ```
@@ -534,3 +535,173 @@ AIC(InfbyWClm, InfbyIndexWlm, InfCRlm)
 ```
 
 Overall, AIC model selection is showing that the probability of infection model with index worm load is a better fit overall than both the other candidates. The AIC for our index infection burden model is greater than two difference than either model so it seems that best predicts the transmission of parasites. 
+
+\section{Testing for whether individual hosts changed their total contact rate between days 2 and 3 more for infected populations relative to uninfected populations}
+```{r subseting to the data needed to test for change in beahvior between days 2 and 3}
+
+#Subsetting down to one row per fish
+PopCRCh<-PopulationContacts%>%
+  group_by(population)%>%
+  distinct(fishID, .keep_all=TRUE)
+
+
+```
+
+\subsection{Fitting a model to test for important factors in the change in behaivor}
+
+```{r Fitting a model to test for important factors in the change in behaivor}
+
+ChBehavTotLM<-lmer(TotalCRCh~InfectionTrt*Sex+(1|population), PopCRCh)
+
+summary(ChBehavTotLM)
+
+```
+
+\subsection{Next we see will validate the model to make sure everything is looking good.}
+
+```{r model validation for prob of infection vs WormContact}
+#Using DHARMa package to look at quantile residuals to validate the model fit
+sim_residuals_ChBehavTotLM<-simulateResiduals(ChBehavTotLM, 1000)  #Quantile residuals
+#Ploting the quantile residuals
+plot(sim_residuals_ChBehavTotLM) 
+#Testing dispersion
+testDispersion(sim_residuals_ChBehavTotLM)
+
+#Below we are exmaining the quantile residuals among the fixed variables to see if there are any funky patterns. Excluded from main run for space but remove # to see plots
+#plotResiduals(sim_residuals_InfCRlm, IndividualInfDFD2$Sex)
+#plotResiduals(sim_residuals_InfCRlm, IndividualInfDFD2$ContactRate)
+```
+
+\subsection{F test to test for significance of our fixed effects in the model}
+
+```{r Likelihood ratio test for prob of inf with WormContact}
+#Drop 1 with chisq test to do a likelihood ratio test for our model
+Anova(ChBehavTotLM, type=3, test="F")
+
+```
+
+\subsection{Visualizing the relationship between variables and total change in behavior}
+
+```{r visualizing the relationship between variables and total change in behavior}
+
+ChBehavTotLMVR<-visreg(ChBehavTotLM, "Sex", partial=T, scale="response", plot=FALSE)
+
+ChBehavTotLMVRfit<-ChBehavTotLMVR$fit
+ChBehavTotLMres<-ChBehavTotLMVR$res
+
+
+ggplot(ChBehavTotLMres, aes(x=Sex, y=visregRes))+geom_boxplot( outliers=FALSE)+geom_jitter()+theme_classic()+ylab("Change in behavior after infection")+xlab(" ")+theme(text=element_text(size=18))+geom_hline(yintercept=0, linetype="dashed")
+```
+\section{Testing for whether individual hosts changed their initiated contact rate between days 2 and 3 more for infected populations relative to uninfected populations}
+
+\subsection{Fitting a model to test for important factors in the change in initated  contact rate}
+
+```{r Fitting a model to test for important factors in the change in behaivor}
+
+ChBehavTotinitLM<-lmer(CRinitCh~InfectionTrt*Sex+(1|population), PopCRCh)
+
+summary(ChBehavTotinitLM)
+
+```
+\subsection{Next we see will validate the model to make sure everything is looking good.}
+
+```{r model validation for prob of infection vs WormContact}
+#Using DHARMa package to look at quantile residuals to validate the model fit
+sim_residuals_ChBehavTotinitLM<-simulateResiduals(ChBehavTotinitLM, 1000)  #Quantile residuals
+#Ploting the quantile residuals
+plot(sim_residuals_ChBehavTotinitLM) 
+#Testing dispersion
+testDispersion(sim_residuals_ChBehavTotinitLM)
+
+#Below we are exmaining the quantile residuals among the fixed variables to see if there are any funky patterns. Excluded from main run for space but remove # to see plots
+#plotResiduals(sim_residuals_InfCRlm, IndividualInfDFD2$Sex)
+#plotResiduals(sim_residuals_InfCRlm, IndividualInfDFD2$ContactRate)
+```
+
+\subsection{F test to test for significance of our fixed effects in the model}
+
+```{r Likelihood ratio test for prob of inf with WormContact}
+#Drop 1 with chisq test to do a likelihood ratio test for our model
+Anova(ChBehavTotinitLM, type=3, test="F")
+
+```
+
+
+\section{Testing for whether individual hosts changed their total contact rate between days 2 and 3 more for infected populations with index with more intense infections}
+
+
+
+\subsection{Fitting a model to test for important factors in the change in total contact rate for infected populations only}
+
+```{r Fitting a model to test for important factors in the change in behaivor}
+PopCRChI<-PopCRCh%>%
+  filter(InfectionTrt=="1")
+
+
+ChBehavTotinfLM<-lmer(TotalCRCh~IndexWorm+Sex++(1|population), PopCRChI)
+
+summary(ChBehavTotinfLM)
+
+```
+
+\subsection{Next we see will validate the model to make sure everything is looking good.}
+
+```{r model validation for prob of infection vs WormContact}
+#Using DHARMa package to look at quantile residuals to validate the model fit
+sim_residuals_ChBehavTotinfLM<-simulateResiduals(ChBehavTotinfLM, 1000)  #Quantile residuals
+#Ploting the quantile residuals
+plot(sim_residuals_ChBehavTotinfLM) 
+#Testing dispersion
+testDispersion(sim_residuals_ChBehavTotinfLM)
+
+#Below we are exmaining the quantile residuals among the fixed variables to see if there are any funky patterns. Excluded from main run for space but remove # to see plots
+#plotResiduals(sim_residuals_InfCRlm, IndividualInfDFD2$Sex)
+#plotResiduals(sim_residuals_InfCRlm, IndividualInfDFD2$ContactRate)
+```
+
+
+\subsection{F test to test for significance of our fixed effects in the model}
+
+```{r Likelihood ratio test for prob of inf with WormContact}
+#Drop 1 with chisq test to do a likelihood ratio test for our model
+Anova(ChBehavTotinfLM, type=3, test="F")
+
+```
+
+\section{Testing for whether individual hosts changed their total initiated rate between days 2 and 3 more for infected populations with index with more intense infections}
+
+
+
+\subsection{Fitting a model to test for important factors in the change in total contact rate for infected populations only}
+
+```{r Fitting a model to test for important factors in the change in behaivor}
+
+ChBehavinitinfLM<-lmer(CRinitCh~IndexWorm*Sex+(1|population), PopCRChI)
+
+summary(ChBehavinitinfLM)
+
+```
+
+\subsection{Next we see will validate the model to make sure everything is looking good.}
+
+```{r model validation for prob of infection vs WormContact}
+#Using DHARMa package to look at quantile residuals to validate the model fit
+sim_residuals_ChBehavinitinfLM<-simulateResiduals(ChBehavinitinfLM, 1000)  #Quantile residuals
+#Ploting the quantile residuals
+plot(sim_residuals_ChBehavinitinfLM) 
+#Testing dispersion
+testDispersion(sim_residuals_ChBehavinitinfLM)
+
+#Below we are exmaining the quantile residuals among the fixed variables to see if there are any funky patterns. Excluded from main run for space but remove # to see plots
+#plotResiduals(sim_residuals_InfCRlm, IndividualInfDFD2$Sex)
+#plotResiduals(sim_residuals_InfCRlm, IndividualInfDFD2$ContactRate)
+```
+
+
+\subsection{F test to test for significance of our fixed effects in the model}
+
+```{r Likelihood ratio test for prob of inf with WormContact}
+#Drop 1 with chisq test to do a likelihood ratio test for our model
+Anova(ChBehavinitinfLM, type=3, test="F")
+
+```
